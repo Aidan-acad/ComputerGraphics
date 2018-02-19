@@ -44,6 +44,9 @@ vector<Triangle> triangles;
 
 int main( int argc, char* argv[] )
 {
+  R[3][0] = cameraPos.x;
+  R[3][1] = cameraPos.y;
+  R[3][2] = cameraPos.z;
   LoadTestModel(triangles);
   TransformationMatrix();
   screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
@@ -167,6 +170,10 @@ void TransformationMatrix()
   glm::mat4 camera_neg = mat4(1.0f);
   glm::mat4 camera_pos = mat4(1.0f);
 
+  R[3][0] = cameraPos.x;
+  R[3][1] = cameraPos.y;
+  R[3][2] = cameraPos.z;
+
   camera_neg[3][0] = -cameraPos.x;
   camera_neg[3][1] = -cameraPos.y;
   camera_neg[3][2] = -cameraPos.z;
@@ -175,7 +182,7 @@ void TransformationMatrix()
   camera_pos[3][1] = cameraPos.y;
   camera_pos[3][2] = cameraPos.z;
 
-  combinedMatrix = camera_pos * R * camera_neg;
+  combinedMatrix = camera_neg * R * camera_pos;
 }
 
 void VertexShader( const glm::vec4& v, glm::ivec2& p)
