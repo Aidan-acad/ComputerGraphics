@@ -11,6 +11,7 @@ using glm::vec3;
 using glm::mat3;
 using glm::vec4;
 using glm::mat4;
+using glm::ivec2;
 
 
 #define SCREEN_WIDTH 320
@@ -24,10 +25,11 @@ void Update();
 void Draw(screen* screen);
 void TransformationMatrix();
 void VertexShader( const glm::vec4& v, glm::ivec2& p);
-void myInterpolate( glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result );
+void myInterpolate( glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result);
 void DrawLineSDL( screen* screen, glm::ivec2 a, glm::ivec2 b, vec3 color );
-void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices );
-void ComputePolygonRows(const vector<glm::ivec2>& vertexPixels,vector<glm::ivec2>& leftPixels,vector<glm::ivec2>& rightPixels );
+void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices,vec3 triColor );
+void ComputePolygonRows(vector<glm::ivec2>& vertexPixels,vector<glm::ivec2>& leftPixels,vector<glm::ivec2>& rightPixels,int& minY );
+void DrawRows(screen* screen, const vector<glm::ivec2>& leftPixels, const vector<glm::ivec2>& rightPixels, vec3 color);
 // Global Variables
 //camera
 float focalLength = SCREEN_HEIGHT;
@@ -45,50 +47,22 @@ vector<Triangle> triangles;
 
 int main( int argc, char* argv[] )
 {
-  //R[3][0] = cameraPos.x;
-  //R[3][1] = cameraPos.y;
-  //R[3][2] = cameraPos.z;
-  //LoadTestModel(triangles);
-  //TransformationMatrix();
-  //screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
-  vector<glm::ivec2> vertexPixels(3);
-  vertexPixels[0] = glm::ivec2(10, 5);
-  vertexPixels[1] = glm::ivec2( 5,10);
-  vertexPixels[2] = glm::ivec2(15,15);
-  int MaxY = -numeric_limits<int>::max();
-  int MinY = +numeric_limits<int>::max(); 
-  for (int i = 0; i < 3;i++){
-    if(vertexPixels[i].y > MaxY){
-      MaxY = vertexPixels[i].y;
+  R[3][0] = cameraPos.x;
+  R[3][1] = cameraPos.y;
+  R[3][2] = cameraPos.z;
+  LoadTestModel(triangles);
+  TransformationMatrix();
+  screen *screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT, FULLSCREEN_MODE );
+  while( NoQuitMessageSDL() )
+    {
+      Update();
+      Draw(screen);
+      SDL_Renderframe(screen);
     }
-    if(vertexPixels[i].y < MinY){
-      MinY = vertexPixels[i].y;
-    }
-  }
-  int range = MaxY - MinY + 1;
-  //cout << range;
-  vector<glm::ivec2> leftPixels(range);
-  vector<glm::ivec2> rightPixels(range);
-  ComputePolygonRows( vertexPixels, leftPixels, rightPixels );
-  for( int row=0; row<leftPixels.size(); ++row )
-  {
-  cout << "Start: ("
-  << leftPixels[row].x << ","
-  << leftPixels[row].y << "). "
-  << "End: ("
-  << rightPixels[row].x << ","
-  << rightPixels[row].y << "). " << endl;
-  }
-  //while( NoQuitMessageSDL() )
-  //  {
-  //    Update();
-  //    Draw(screen);
-  //    SDL_Renderframe(screen);
-  //  }
 
-  //SDL_SaveImage( screen, "screenshot.bmp" ); 
+  SDL_SaveImage( screen, "screenshot.bmp" ); 
 
-  //KillSDL(screen);
+  KillSDL(screen);
   return 0;
 }
 
@@ -104,20 +78,7 @@ void Draw(screen* screen)
       vertices[0] = triangles[i].v0;
       vertices[1] = triangles[i].v1;
       vertices[2] = triangles[i].v2;
-      int MaxY = -numeric_limits<int>::max();;
-      int MinY = +numeric_limits<int>::max(); 
-      for (int i = 0; i < 3;i++){
-        if(vertices[i].y > MaxY){
-          MaxY = vertices[i].y;
-        }else if(vertices[i].y < MinY){
-          MinY = vertices[i].y;
-        }
-      }
-      int range = MaxY - MinY + 1;
-      for(int v=0; v<3; ++v)
-      {
-        DrawPolygonEdges(screen,vertices);
-      }
+      DrawPolygonEdges(screen,vertices,triangles[i].color);
     }
 }
 
@@ -321,8 +282,14 @@ void VertexShader( const glm::vec4& v, glm::ivec2& p)
 
 void myInterpolate( glm::ivec2 a, glm::ivec2 b, vector<glm::ivec2>& result )
 {
+  if(a.y > b.y){
+    glm::ivec2 temp = a;
+    a = b;
+    b = temp;
+  }
   int N = result.size();
-  vec2 step = vec2(b-a) / float(max(N-1,1));
+  vec2 step = vec2(b.x-a.x,b.y-a.y);
+  step = step / float(max(N-1,1));
   vec2 current( a );
   //cout << "Beginning interpolate";
   for( int i=0; i<N; ++i )
@@ -345,8 +312,9 @@ void DrawLineSDL( screen* screen, glm::ivec2 a, glm::ivec2 b, vec3 color )
   }
 }
 
-void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices )
+void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices, vec3 triColor )
 {
+  //cout << "begin the operation" << std::endl;
   int V = vertices.size();
   // Transform each vertex from 3D world position to 2D image position:
   vector<glm::ivec2> projectedVertices( V );
@@ -354,6 +322,32 @@ void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices )
   {
     VertexShader( vertices[i], projectedVertices[i] );
   }
+  //cout << "points mapped" << std::endl;
+  int MaxY = -numeric_limits<int>::max();;
+  int MinY = +numeric_limits<int>::max(); 
+  for (int i = 0; i < 3;i++){
+    if(projectedVertices[i].y > MaxY){
+      MaxY = projectedVertices[i].y;
+    }
+    if(projectedVertices[i].y < MinY){
+      MinY = projectedVertices[i].y;
+    }
+  }
+  int range = MaxY - MinY + 1;
+  //cout << "range calced  " << range <<  std::endl;
+  vector<ivec2> leftPixels;
+  vector<ivec2> rightPixels;
+  leftPixels.resize(range);
+  rightPixels.resize(range);
+  //cout << "begin row comp" << std::endl;
+  /*for (int x = 0;x < projectedVertices.size() ;x++){
+    cout << projectedVertices[x].x << " " << projectedVertices[x].y << std::endl;
+  }*/
+  //cout << "assign VALUE" << std::endl;
+  ComputePolygonRows( projectedVertices, leftPixels, rightPixels, MinY);
+  //cout << "WELL ASSIGNED" << std::endl;
+  vec3 color(1,0,0);
+  DrawRows(screen,leftPixels,rightPixels,triColor);
   // Loop over all vertices and draw the edge from it to the next vertex:
   for( int i=0; i<V; ++i )
   {
@@ -364,27 +358,42 @@ void DrawPolygonEdges(screen* screen, const vector<vec4>& vertices )
 }
 
 void ComputePolygonRows(
-const vector<glm::ivec2>& vertexPixels,
+vector<glm::ivec2>& vertexPixels,
 vector<glm::ivec2>& leftPixels,
-vector<glm::ivec2>& rightPixels ){
+vector<glm::ivec2>& rightPixels,
+int& minY ){
   for( int i=0; i<leftPixels.size(); ++i )
   {
     leftPixels[i].x = +numeric_limits<int>::max();
+    leftPixels[i].y = 0;
+    rightPixels[i].y = 0;
     rightPixels[i].x = -numeric_limits<int>::max();
   }
   vector<glm::ivec2> outPix(leftPixels.size());
   for (int i = 0;i < 3;i++){
+    cout << "current stage : " << i << std::endl;
     myInterpolate(vertexPixels[i],vertexPixels[(i+1)%3],outPix);
+    cout << "interpolate successful : " << std::endl;
+    int yOffset = minY;
     int prevY = numeric_limits<int>::max();
+    cout << "looping over results" << std::endl;
     for(int j = 0;j < outPix.size();j++){
-        if(leftPixels[j].x > outPix[j].x){
-          leftPixels[j].x = outPix[j].x;
+        if(leftPixels[outPix[j].y - yOffset].x > outPix[j].x){
+          leftPixels[outPix[j].y - yOffset].x = outPix[j].x;
         }
-        if(rightPixels[j].x < outPix[j].x){
-          rightPixels[j].x = outPix[j].x;
+        if(rightPixels[outPix[j].y - yOffset].x < outPix[j].x){
+          rightPixels[outPix[j].y - yOffset].x = outPix[j].x;
         }
-        leftPixels[j].y = outPix[j].y;
-        rightPixels[j].y = outPix[j].y;
+        leftPixels[outPix[j].y - yOffset].y = outPix[j].y;
+        rightPixels[outPix[j].y - yOffset].y = outPix[j].y;
+    }
+    cout << "results finished" << std::endl;
+  }
+}
+
+  void DrawRows(screen* screen, const vector<glm::ivec2>& leftPixels, const vector<glm::ivec2>& rightPixels, vec3 color){
+    for (int i = 0; i < leftPixels.size(); i++){
+      DrawLineSDL(screen,leftPixels[i],rightPixels[i],color);
     }
   }
   // 1. Find max and min y-value of the polygon
@@ -398,4 +407,3 @@ vector<glm::ivec2>& rightPixels ){
   //linear interpolation to find the x-coordinate for
   //each row it occupies. Update the corresponding
   //values in rightPixels and leftPixels.
-}
